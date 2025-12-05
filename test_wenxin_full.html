@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文心一言API测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        input, button {
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        input {
+            width: 70%;
+            margin-right: 10px;
+        }
+        button {
+            width: 25%;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .response {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .logs {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #2d2d2d;
+            color: #00ff00;
+            border-radius: 4px;
+            font-family: monospace;
+            height: 300px;
+            overflow-y: auto;
+        }
+        .error {
+            color: red;
+        }
+        .success {
+            color: green;
+        }
+        .info {
+            color: blue;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>文心一言API测试</h1>
+        
+        <div class="input-group">
+            <input type="text" id="question" placeholder="输入您的问题..." value="你好，文心一言">
+            <button id="sendBtn">发送</button>
+        </div>
+        
+        <div class="response">
+            <strong>AI回复：</strong>
+            <div id="answer"></div>
+        </div>
+        
+        <div class="logs">
+            <strong>调试日志：</strong>
+            <div id="logs"></div>
+        </div>
+    </div>
+
+    <script>
+        const wsUrl = 'ws://localhost:9876';
+        let ws = null;
+        let isConnected = false;
+        let userId = null;
+
+        // 日志记录函数
+        function log(message, type = 'info') {
+            const logsDiv = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = type;
+            logEntry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+            logsDiv.appendChild(logEntry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+
+        // 连接WebSocket
+        function connectWebSocket() {
+            log('正在连接WebSocket服务器...');
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function() {
+                log('WebSocket连接成功', 'success');
+                isConnected = true;
+                loginUser();
+            };
+            
+            ws.onmessage = function(event) {
+                log(`收到消息: ${event.data}`);
+                handleMessage(JSON.parse(event.data));
+            };
+            
+            ws.onerror = function(error) {
+                log(`WebSocket错误: ${error.message}`, 'error');
+                isConnected = false;
+            };
+            
+            ws.onclose = function() {
+                log('WebSocket连接关闭', 'error');
+                isConnected = false;
+            };
+        }
+
+        // 用户登录
+        function loginUser() {
+            log('正在登录用户...');
+            const loginData = {
+                type: 'login',
+                username: 'test_user',
+                nickname: '测试用户',
+                server_address: wsUrl
+            };
+            
+            ws.send(JSON.stringify(loginData));
+        }
+
+        // 发送问题
+        function sendQuestion() {
+            const question = document.getElementById('question').value;
+            if (!question.trim()) {
+                log('请输入问题', 'error');
+                return;
+            }
+            
+            if (!isConnected) {
+                log('WebSocket未连接，请先连接服务器', 'error');
+                connectWebSocket();
+                return;
+            }
+            
+            log(`发送问题: ${question}`);
+            
+            const messageData = {
+                type: 'message',
+                username: 'test_user',
+                nickname: '测试用户',
+                message: `@川小农 ${question}`,
+                timestamp: new Date().toISOString(),
+                client_id: userId
+            };
+            
+            ws.send(JSON.stringify(messageData));
+            document.getElementById('answer').innerHTML = '<em>等待AI回复...</em>';
+        }
+
+        // 处理服务器消息
+        function handleMessage(data) {
+            log(`处理消息: ${JSON.stringify(data)}`);
+            
+            switch(data.type) {
+                case 'login_response':
+                    if (data.success) {
+                        log('用户登录成功', 'success');
+                        userId = data.client_id;
+                        log(`用户ID: ${userId}`);
+                    } else {
+                        log(`登录失败: ${data.message}`, 'error');
+                    }
+                    break;
+                    
+                case 'message':
+                    if (data.username === 'system' && data.message.includes('@川小农')) {
+                        log('收到系统消息，正在处理AI回复...');
+                    } else if (data.nickname === '川小农') {
+                        log('收到AI回复', 'success');
+                        document.getElementById('answer').innerHTML = data.message;
+                    }
+                    break;
+                    
+                case 'error':
+                    log(`服务器错误: ${data.message}`, 'error');
+                    document.getElementById('answer').innerHTML = `<span class="error">错误: ${data.message}</span>`;
+                    break;
+                    
+                default:
+                    log(`未知消息类型: ${data.type}`);
+            }
+        }
+
+        // 页面加载完成后连接WebSocket
+        window.onload = function() {
+            connectWebSocket();
+            
+            // 发送按钮点击事件
+            document.getElementById('sendBtn').addEventListener('click', sendQuestion);
+            
+            // 回车键发送
+            document.getElementById('question').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendQuestion();
+                }
+            });
+        };
+    </script>
+</body>
+</html>

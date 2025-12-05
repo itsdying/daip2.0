@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试@天气命令</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #chat-container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        #message-list {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+        }
+        #message-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        .sender {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .timestamp {
+            font-size: 12px;
+            color: #999;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>测试@天气命令</h1>
+    <div id="chat-container">
+        <div id="message-list"></div>
+        <input type="text" id="message-input" placeholder="输入@天气命令测试" value="@天气">
+        <button onclick="sendMessage()">发送消息</button>
+        <button onclick="clearMessages()">清空消息</button>
+    </div>
+
+    <script>
+        // WebSocket连接
+        const ws = new WebSocket('ws://localhost:9876');
+        let isConnected = false;
+        let isLoggedIn = false;
+
+        // 连接打开事件
+        ws.onopen = function() {
+            console.log('WebSocket连接已打开');
+            isConnected = true;
+            addMessage('系统', 'WebSocket连接已打开', new Date().toLocaleTimeString());
+            
+            // 先登录
+            login();
+        };
+
+        // 接收消息事件
+        ws.onmessage = function(event) {
+            console.log('收到消息:', event.data);
+            const message = JSON.parse(event.data);
+            
+            if (message.type === 'login_response' && message.success) {
+                isLoggedIn = true;
+                addMessage('系统', '登录成功，可以发送消息了', new Date().toLocaleTimeString());
+            } else if (message.type === 'message' || message.type === 'command') {
+                addMessage(message.sender, message.content, message.timestamp);
+            } else if (message.type === 'error') {
+                addMessage('系统', '错误: ' + message.content, new Date().toLocaleTimeString(), 'error');
+            } else if (message.type === 'system') {
+                addMessage('系统', message.content, message.timestamp);
+            }
+        };
+
+        // 连接关闭事件
+        ws.onclose = function() {
+            console.log('WebSocket连接已关闭');
+            isConnected = false;
+            isLoggedIn = false;
+            addMessage('系统', 'WebSocket连接已关闭', new Date().toLocaleTimeString(), 'error');
+        };
+
+        // 连接错误事件
+        ws.onerror = function(error) {
+            console.error('WebSocket错误:', error);
+            addMessage('系统', 'WebSocket连接错误', new Date().toLocaleTimeString(), 'error');
+        };
+
+        // 登录函数
+        function login() {
+            const loginData = {
+                type: 'login',
+                username: '111',
+                nickname: '测试用户',
+                server_address: 'ws://localhost:9876'
+            };
+            ws.send(JSON.stringify(loginData));
+        }
+
+        // 发送消息函数
+        function sendMessage() {
+            if (!isConnected) {
+                addMessage('系统', 'WebSocket未连接', new Date().toLocaleTimeString(), 'error');
+                return;
+            }
+            
+            if (!isLoggedIn) {
+                addMessage('系统', '请先登录', new Date().toLocaleTimeString(), 'error');
+                return;
+            }
+            
+            const messageInput = document.getElementById('message-input');
+            const content = messageInput.value.trim();
+            
+            if (!content) {
+                addMessage('系统', '消息内容不能为空', new Date().toLocaleTimeString(), 'error');
+                return;
+            }
+            
+            const messageData = {
+                type: 'message',
+                content: content
+            };
+            
+            ws.send(JSON.stringify(messageData));
+            addMessage('我', content, new Date().toLocaleTimeString());
+            messageInput.value = '';
+        }
+
+        // 添加消息到消息列表
+        function addMessage(sender, content, timestamp, type = '') {
+            const messageList = document.getElementById('message-list');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = `
+                <span class="sender">${sender}</span> 
+                <span class="timestamp">${timestamp}</span><br>
+                <span>${content}</span>
+            `;
+            messageList.appendChild(messageDiv);
+            messageList.scrollTop = messageList.scrollHeight;
+        }
+
+        // 清空消息列表
+        function clearMessages() {
+            const messageList = document.getElementById('message-list');
+            messageList.innerHTML = '';
+        }
+
+        // 按Enter键发送消息
+        document.getElementById('message-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
